@@ -1,0 +1,330 @@
+---
+title: "Analise Cater JJ"
+author: "gersonprimo@gmail.com"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Carregar bibliotecas
+library(tidyverse)
+library(hrbrthemes)
+library(patchwork)
+library(ggstatsplot)
+# Ler os dados
+df <- readxl::read_excel("xlsx/tabela tcc jj 1805 ARRUMADA.xlsx", sheet = 'df') %>% 
+    janitor::clean_names()
+```
+
+> **NOTA:** Texto sem revisão de literatura ou ortográfica, apenas coloquei numa linha de raciocino para que possamos ver os resultados mais facilmente e os comentarios são apenas obeservações minha dos dados. Não fiz nenhuma revisão de literatura ou algo do tipo.
+
+## 1.Introdução
+
+A ideia aqui é sintetizar os resultados da analise feita sobre o conjunto de dados referente a infectção bacteriana no uso do cater JJ.
+
+### Ajustes & Filtro na base
+
+Tivemos que fazer alguns ajustes do dataset, padronizando por exemplo a `dx_da_causa_de_insercao` .
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Transformações
+df <- df %>% 
+  mutate(
+    Infec.Bacteriana = if_else(is.na(desvolveu_bac), 'Não','Sim')
+    ,sexo = str_sub(sexo,1,1)
+    ,dx_da_causa_de_insercao = str_to_upper(dx_da_causa_de_insercao)
+    ,manipulacao_ureteral_previa = if_else(manipulacao_ureteral_previa %in% c('Não','N'), 'Não','Sim')
+    ,dx_da_causa_de_insercao =  case_when(
+       str_detect(dx_da_causa_de_insercao,"NEFROLI") == TRUE ~ 'NEFROLIITASE'
+      ,str_detect(dx_da_causa_de_insercao,"URETER|UROLITIASE") == TRUE ~ 'URETEROLITIASE'
+      ,TRUE ~ 'Outras')
+    ,Qtd_dias_internado = case_when(
+             dias_de_internamento == 0 ~ '0 Dias'
+             ,dias_de_internamento == 1 ~ '1 Dia'
+             ,dias_de_internamento == 2 ~ '2 Dias'
+             ,dias_de_internamento == 3 ~ '3 Dias'
+             , TRUE ~ '4 Dias[ou+]'
+     )
+    ) %>% 
+  mutate(across(is.character, ~ str_to_title(.x)))
+
+df <- df %>% filter(!is.na(qdade)) # Remover a paciente repedida
+# df <- df %>% filter(sexo != 'M')  # Remover os homens do estudo, pois eles não apresentaram infecção
+
+dim(df)
+```
+
+Removemos do estudo um paciente que estava repetido na base. 
+
+
+## 2. Analise descritiva
+
+### 2.1 Perfil do paciente
+
+A maioria dos participantes do estudo são mulheres e quando analisamos a idade as mulheres são lireigamente mais velhas, com idade média de 49 anos vs 44 anos para os homens.
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Genero
+p1 <- ggplot(df) +
+  aes(x = sexo) +
+  geom_bar(position = "dodge", fill = "#D95F02") +
+  labs(y = " ", title = "Genero") +
+  coord_flip() +
+  theme_gray() +
+  theme(plot.title = element_text(face = "bold"))
+
+p2 <- ggplot(df) +
+  aes(x = "", y = idade, fill = sexo) +
+  geom_boxplot() +
+  scale_fill_manual(values = c(F = "#D95F02", M = "#1B9E77")) +
+  theme_gray() +
+  theme(legend.position = "top") +
+  labs(title = "Idade vs Genero",
+       caption = paste("Idade Média (",
+          paste('F:',mean(df$idade[df$sexo == 'F']) %>% round(.,0), 'Anos')
+         ,paste('M:',mean(df$idade[df$sexo == 'M']) %>% round(.,0), 'Anos')
+       ,")",sep = ' '
+       )
+       ) 
+  
+p1 + p2 
+
+```
+
+> Na amostra do estudo temos 16 pacientes homens e não identificamos infecção bacteriana em nenhum.
+
+### 2.2 Historico clinico
+
+1.  A maioria dos pacientes ficaram internados apos a insersão, com uma duração média de 2,3 dias
+2.  Quase nenhum paciente fez o uso prévio de antibiotico
+3.  As causas de inserção são por Nefrolitase ou Ureterolitiase
+4.  Quase a metade dos pacientes apresentam comorbidade
+5.  Baixo indice de diabetes, hipertensão e insuficiencia renal
+6.  Nenhuma pacientes apresentou insuficiencia cardiaca
+7.  A maioria não teve manipulação ureteral prévia
+
+```{r echo=FALSE}
+#df <- df %>% filter(sexo != 'M')  # Remover os homens do estudo, pois eles não apresentaram infecção
+## Caracteritica das pacientes
+df %>% select(insercao:manipulacao_ureteral_previa) %>% 
+  select(-insercao,-retirada) %>% 
+  DataExplorer::plot_bar(title = 'Descrição geral dos pacientes')
+```
+
+### 2.3 Proliveração de bacteria
+
+Foi coletado/analisado a presença de bacteria em 5 pontos distintos. De modo geral, notamos que tiveram 4 tipos de bacterias que não foram encontradas em nenhum ponto. Entre as bacterias com maior incidencias estão a E.Coli e E.Faecalis. Um ponto que chama atenção aqui é o fato da E.Coli ter uma incidência baixa na sonicação, seja distriral ou próxima.
+
+```{r echo=FALSE, fig.height=4, fig.width=8}
+## Incidencia da bacteria  
+
+# Ajustar o dataSet
+incidencia <-  df %>%
+  mutate(across(urocul_e_coli:s_distal_outro, ~ if_else(.x == 'Não',0,1))) %>% 
+  filter(sexo != 'M') %>%
+  summarise(across(urocul_e_coli:s_distal_outro, ~ sum(.x))) %>% 
+  pivot_longer(cols = urocul_e_coli:s_distal_outro, names_to = "variavel", values_to = "valor") %>% 
+  mutate(
+    grupo = case_when(
+       str_detect(variavel, 'urocul') == TRUE ~ 'Urocultura'
+      ,str_detect(variavel, 'c_p_prox') == TRUE ~ 'C.Padrão: Próxima'
+      ,str_detect(variavel, 'c_p_dist') == TRUE ~ 'C.Padrão: Distrital'
+      ,str_detect(variavel, 's_prox') == TRUE ~ 'Sonicação: Próxima'
+      ,str_detect(variavel, 's_distal') == TRUE ~ 'Sonicação: Distrital'
+    )
+  , variavel = str_remove_all(string =variavel,pattern = "urocul_|c_p_prox_|c_p_dist_|s_prox_|s_distal_") 
+          %>% str_to_upper()
+  ) %>% 
+  arrange(valor) %>% 
+  mutate(variavel = str_replace_all(str_to_upper(variavel), "_", " ") 
+         ,variavel = fct_reorder(variavel, valor)
+  )
+
+# Grafico
+ggplot(incidencia, aes(x=variavel, y=valor)) +
+  geom_segment(
+    aes(x=variavel, xend=variavel, y=0, yend=valor), 
+    color=ifelse(incidencia$valor == 0, "orange", "#1B9E77"), 
+    size=ifelse(incidencia$valor == 0, 1.1, 1.2)
+  ) +
+  geom_point(
+    color=ifelse(incidencia$valor == 0, "#D95F02", "#1B9E77"), 
+    size=ifelse(incidencia$valor == 0, 3, 2)
+  ) +
+  coord_flip() +
+  labs(
+    x = "Tipo bacteria",
+    y = "Nº de Ocorrênica",
+    title = "Local de Analise"
+    #subtitle = ""
+  ) +
+  facet_wrap(vars(grupo), scales = "free_x", ncol = 5L) +
+  theme_gray() +
+  theme(plot.title = element_text(face = "bold")
+        #    ,axis.title.x = element_text(hjust = 1)
+        ,axis.title.y = element_text(hjust = 1)
+  )
+```
+
+Cosiderando a presença de pelo menos um das bacterias tivemos no total **12 pacientes infectados (43%)**.
+
+```{r echo=FALSE}
+df %>% janitor::tabyl(Infec.Bacteriana) %>% 
+  janitor::adorn_pct_formatting() %>% 
+  knitr::kable( longtable = TRUE)
+```
+
+## 3. Relações da infecção
+
+### 3.1 Infecção vs idade
+
+Definido a hipotase:
+
+> $H_0$: A idade do paciente não influencia na infecção bacteriana.
+
+Apesar das mulheres infectadas tem idade menor (47 anos). Aplicando o test `t-Student` vimos que estatisticamente não tem influencia de idade sobre infecção bacteriana (*p = 0,18*)
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+## Relação da idade com a infecç
+plt <- ggbetweenstats(
+  data = df,
+  x = Infec.Bacteriana,
+  y = idade
+) 
+plt <- plt + 
+  # Add labels and title
+  labs(
+    y = "Idade",
+    x = "Teve infecção bacteriana",
+    title = "Distribuição da idade das pacientes",
+    caption = ""
+  )
+plt
+```
+
+### 3.2 Infecção vs dias de internação
+
+Para fins de analise categorizei o tempo de internação em 5 categorias, ou seja, os pacientes que não ficou nenhum dia, até os pacientes que ficaram de 4 dias ou mais.
+
+Queremos analisar se a quantidade de dias internado impacta na poriferação de bacterias. Dessa forma definimos a seguinte hipotese.
+
+> $H_0$: O tempo de internação não influencia na infecção bacteriana.
+
+```{r echo=FALSE}
+ ggbarstats(
+    data = df
+    ,x = Infec.Bacteriana
+    ,y = Qtd_dias_internado
+    ,results.subtitle = TRUE
+    ,type  = "nonparametric"
+    ) +
+    ggplot2::theme_grey(base_size = 8,base_rect_size = 5) + 
+    theme(
+      legend.position = "top"
+      ,legend.justification = c("right", "top")
+      ,legend.margin = margin(6, 6, 6, 6)
+    ) +
+    labs(caption = "")
+```
+
+-   Note que a medida que aumenta a quantidade de dia diminui o percentual de infectados até 2 dias, depois disso volta a crescer. Aparentemente o tempo ideal de internação são 2 dias, isso porque em apenas 20% dos pacientes que ficaram internados 2 dias apresentaram algum tipo de infecção, porém não temos evidencia estatistica para rejeita a $H_0$. (*p = 0.74*)
+
+### 3.3 Infecção vs Tempo de uso
+
+O tempo médio de internação para ambos os grupos são iguais, aproximadamente 115 dias. Porém vale resaltar que entre as pessoas não infectadas teve uma consentração maior em internação menor que 65 dias, ou seja, 50% dos pacientes que não desenvolveram infecção ficaram internados até 65 dias.
+
+Definido a hipotase:
+
+> $H_0$: O tempo de uso não influencia na infecção bacteriana.
+
+```{r echo=FALSE}
+ plt2 <- ggbetweenstats(
+    data = df,
+    x = Infec.Bacteriana,
+    y = tempo_de_uso
+  ) 
+  plt2 <- plt2 + 
+    ggplot2::theme_grey(base_size = 8,base_rect_size = 5) +
+    theme(
+      legend.position = "top"
+      ,legend.justification = c("right", "top")
+      ,legend.margin = margin(6, 6, 6, 6)
+    ) +
+    labs(
+      y = "Tempo de uso",
+      x = "Teve infecção bacteriana",
+      title = "Distribuição do tempo de uso do cater DuploJ",
+      caption = ''
+    )
+  plt2  
+```
+
+-     Não tem evidencia
+
+
+### 3.2 Infecção vs historico clinico
+
+Com base no histórico clinico dos pacientes e algumas caracteristicas da internação, fomos testar se alguma desses atributos tem associação com infecção bacteriana durante o uso do cater JJ.
+
+Dessa forma a hipotese que será testada é:
+
+> $H_0$: A infecção indifere dos abritutos listados no 2.2
+
+```{r echo=FALSE, fig.height=9, fig.width=12}
+## Função dos graficos
+plot_qui2 <- function(dataset, y){
+  ggbarstats(
+    data = dataset
+    ,x = Infec.Bacteriana
+    ,y = !!y
+    ,results.subtitle = TRUE
+    ,type  = "nonparametric"
+    ) +
+    ggplot2::theme_grey(base_size = 8,base_rect_size = 5) + 
+    theme(
+      legend.position = "top"
+      ,legend.justification = c("right", "top")
+      ,legend.margin = margin(6, 6, 6, 6)
+    ) +
+    labs(caption = "")
+}
+
+# Variaveis a seram testadas
+variavel <- c(
+  "internamento_pos_insercao"
+  ,"antibiotico_previo"
+  ,"dx_da_causa_de_insercao"
+  ,"comorbidades"
+  ,"diabetes"
+  ,"hipertensao"
+  ,"insuficiencia_renal"
+  ,"insuficiencia_cardiaca"
+  ,"manipulacao_ureteral_previa"
+)
+
+# Aplicar a função
+plots = purrr::map(variavel, ~plot_qui2(.x,dataset = df))
+
+#Visualização
+(plots[[1]] + plots[[2]] + plots[[3]]) /
+  (plots[[4]] + plots[[5]] + plots[[6]])/
+  (plots[[7]] + plots[[8]] + plots[[9]])
+
+```
+
+Com base no grafico acoma podemos destacar que:
+
+1.  A comorbidade aparentemente tem associação com o desenvolvimento de bacterias, pois entre as pessoas que não tem comorbidade, apenas 38% desenvolveu algum tipo de infecção. No entanto, com base no teste de Qui-Quadrado de person, não temos evidencia estatistica da associação de comorbidade com infec.Bacteriana (*p = 0.44*)
+2.  A manipulação uretaral prévia mostra que em 45% dos casos que teve a manipulação teve infec.bacteriana, vesus 41% de quem não fez a manipulação, no entanto não temos evidencia estatistca da associação (*p = 0.82*)
+3.  A quantidade de observações para os atributos de diabete, hipertensão, insuficiencia Cardiaca e insuficienca renal são baixas, sendo assim conseguimos inferir o efeito desses atributos no desenvolvimento de bacterias.
+
+## 4. Conclusões
+
+
+*As principais concluções são*
+  1. p1
+  2. p2
+
+
