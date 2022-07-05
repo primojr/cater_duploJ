@@ -166,8 +166,8 @@ extract_stats(p)
 y# the exact details depend on the function
 extract_stats(ggbarstats(mtcars, cyl, am)
 
-
-
+tapply(df$tempo_de_uso, df$Infec.Bacteriana, median)
+table(df$sexo) 
 
 
 

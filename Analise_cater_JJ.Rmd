@@ -13,8 +13,7 @@ library(hrbrthemes)
 library(patchwork)
 library(ggstatsplot)
 # Ler os dados
-df <- readxl::read_excel("xlsx/tabela tcc jj 1805 ARRUMADA.xlsx", sheet = 'df') %>% 
-    janitor::clean_names()
+df <- readxl::read_excel("xlsx/tabela tcc jj 1805 ARRUMADA.xlsx", sheet = 'df') %>% janitor::clean_names()
 ```
 
 > **NOTA:** Texto sem revisão de literatura ou ortográfica, apenas coloquei numa linha de raciocino para que possamos ver os resultados mais facilmente e os comentarios são apenas obeservações minha dos dados. Não fiz nenhuma revisão de literatura ou algo do tipo.
@@ -31,7 +30,7 @@ Tivemos que fazer alguns ajustes do dataset, padronizando por exemplo a `dx_da_c
 # Transformações
 df <- df %>% 
   mutate(
-    Infec.Bacteriana = if_else(is.na(desvolveu_bac), 'Não','Sim')
+    Infec.Bacteriana = if_else(is.na(desvolveu_bac), 'Negativa','Positiva')
     ,sexo = str_sub(sexo,1,1)
     ,dx_da_causa_de_insercao = str_to_upper(dx_da_causa_de_insercao)
     ,manipulacao_ureteral_previa = if_else(manipulacao_ureteral_previa %in% c('Não','N'), 'Não','Sim')
@@ -55,15 +54,13 @@ df <- df %>% filter(!is.na(qdade)) # Remover a paciente repedida
 dim(df)
 ```
 
-Removemos do estudo um paciente que estava repetido na base. 
-
+Removemos do estudo um paciente que estava repetido na base.
 
 ## 2. Analise descritiva
 
 ### 2.1 Perfil do paciente
 
 A maioria dos participantes do estudo são mulheres e quando analisamos a idade as mulheres são lireigamente mais velhas, com idade média de 49 anos vs 44 anos para os homens.
-
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Genero
@@ -261,8 +258,9 @@ Definido a hipotase:
   plt2  
 ```
 
--     Não tem evidencia
+-   
 
+        Não tem evidencia
 
 ### 3.2 Infecção vs historico clinico
 
@@ -322,9 +320,4 @@ Com base no grafico acoma podemos destacar que:
 
 ## 4. Conclusões
 
-
-*As principais concluções são*
-  1. p1
-  2. p2
-
-
+*As principais concluções são* 1. p1 2. p2
